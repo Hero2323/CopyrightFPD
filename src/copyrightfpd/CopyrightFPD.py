@@ -1,13 +1,32 @@
 from joblib import load
+import pkg_resources
 import spacy
 import os
+import re
 
 class CopyrightFPD:
-    def __init__(self):
+    def __init__(self, use_local_model=True):
+        # Get the path to the current directory
         dir_path = os.path.dirname(os.path.realpath(__file__))
-        self.fpd = load(os.path.join(dir_path, 'models/false_positive_detection_model.pkl'))
-        self.vectorizer = load(os.path.join(dir_path, 'models/false_positive_detection_vectorizer.pkl'))
-        self.ner_model = spacy.load(os.path.join(dir_path, 'models/ner_model'))
+
+        # Default paths to the model files which come with the package
+        fpd_path = pkg_resources.resource_filename(__name__, 'models/false_positive_detection_model.pkl')
+        vectorizer_path = pkg_resources.resource_filename(__name__, 'models/false_positive_detection_vectorizer.pkl')
+        ner_model_path = pkg_resources.resource_filename(__name__, 'models/ner_model')
+        
+        # Check if the user wants to use the local model and use it if it exists
+        if use_local_model and os.path.exists('/home/fossy/copyrightfpd'):
+            if os.path.exists('/home/fossy/copyrightfpd/false_positive_detection_model.pkl'):
+                fpd_path = '/home/fossy/copyrightfpd/false_positive_detection_model.pkl'
+            if os.path.exists('/home/fossy/copyrightfpd/false_positive_detection_vectorizer.pkl'):
+                vectorizer_path = '/home/fossy/copyrightfpd/false_positive_detection_vectorizer.pkl'
+            if os.path.exists('/home/fossy/copyrightfpd/ner_model'):
+                ner_model_path = '/home/fossy/copyrightfpd/ner_model'
+        
+        # Load the model files
+        self.fpd = load(fpd_path)
+        self.vectorizer = load(vectorizer_path)
+        self.ner_model = spacy.load(ner_model_path)
 
     def preprocess_data(self, data):
         # Initial preprocessing
@@ -63,7 +82,7 @@ class CopyrightFPD:
         data = self.preprocess_data(data)
 
         # predict the data
-        if self.fpd.probability:
+        if self.fpd.get_params()['estimator'].probability:
             predictions = self.fpd.predict_proba(data)
             predictions = ['f' if prediction[1] >= threshold else 't' for prediction in predictions]
         else:
@@ -72,3 +91,31 @@ class CopyrightFPD:
 
         # return the predictions
         return predictions
+
+    def train(self, data, labels):
+        data = self.preprocess_data(data)
+
+        # TODO: Figure out whether to include the training data in the package or not
+        # ! This is needed because vectorizer.fit_transform() needs to see all the data
+        # ! in order to create the vocabulary. This is not needed for the model itself
+
+        # TODO: Figure out whether to retrain the model or simply fine-tune it
+        # ! This is relevant becasue if the new data significnatly changes the vocabulary
+        # ! and thus the vectorizer, then the model might need to be retrained.
+
+        # * Re training the model, or even just the vectorizer, could require an exponential
+        # * amount of time and resources. which is why I am leaning towards fine-tuning the model
+
+        # ? For now, I will not be updating the vectorizer untill I decide on an appraoch
+
+        self.fpd.partial_fit(data, labels)
+
+    def save(self, path=None):
+        os.makedirs('/home/fossy/copyrightfpd', exist_ok=True)
+        model_path = os.path.join(path, '/home/fossy/copyrightfpd/false_positive_detection_model.pkl')
+        #vectorizer_path = os.path.join(path, 'home/fossy/copyrightfpd/false_positive_detection_vectorizer.pkl')
+        #ner_model_path = os.path.join(path, 'ner_model')
+        self.fpd.save_model(model_path)
+        #self.vectorizer.save_model(vectorizer_path)
+        #self.ner_model.to_disk(ner_model_path)
+
